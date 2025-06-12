@@ -1,4 +1,4 @@
-import { ExcalidrawElement } from "@excalidraw/excalidraw/types/element/types";
+import { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import * as Y from "yjs"
 
 

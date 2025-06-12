@@ -1,8 +1,8 @@
-import { ExcalidrawElement, NonDeletedExcalidrawElement } from "@excalidraw/excalidraw/types/element/types"
+import { ExcalidrawElement, NonDeletedExcalidrawElement } from "@excalidraw/excalidraw/element/types"
 import { moveArrayItem, yjsToExcalidraw } from "./helpers"
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing';
 import * as Y from 'yjs'
-import { BinaryFileData, BinaryFiles } from "@excalidraw/excalidraw/types/types";
+import { BinaryFileData, BinaryFiles } from "@excalidraw/excalidraw/types";
 import { ExcalidrawBinding } from "./index";
 
 

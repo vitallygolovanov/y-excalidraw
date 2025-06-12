@@ -2,7 +2,8 @@ import type {
   BinaryFileData,
   Collaborator,
   ExcalidrawImperativeAPI,
-} from "@excalidraw/excalidraw/types/types";
+  SocketId,
+} from "@excalidraw/excalidraw/types";
 import type * as awarenessProtocol from "y-protocols/awareness";
 import * as Y from "yjs"
 import { areElementsSame, debounce, yjsToExcalidraw } from "./helpers";
@@ -17,7 +18,7 @@ export class ExcalidrawBinding {
   undoManager?: Y.UndoManager;
 
   subscriptions: (() => void)[] = [];
-  collaborators: Map<string, Collaborator> = new Map();
+  collaborators: Map<SocketId, Collaborator> = new Map();
   lastKnownElements: LastKnownOrderedElement[] = []
   lastKnownFileIds: Set<string> = new Set();
 
@@ -133,7 +134,7 @@ export class ExcalidrawBinding {
             continue;
           }
 
-          collaborators.set(id.toString(), {
+          collaborators.set(id.toString() as SocketId, {
             pointer: state.pointer,
             button: state.button,
             selectedElementIds: state.selectedElementIds,
@@ -144,9 +145,9 @@ export class ExcalidrawBinding {
           });
         }
         for (const id of removed) {
-          collaborators.delete(id.toString());
+          collaborators.delete(id.toString() as SocketId);
         }
-        collaborators.delete(this.awareness.clientID.toString());
+        collaborators.delete(this.awareness.clientID.toString() as SocketId);
         this.api.updateScene({ collaborators });
         this.collaborators = collaborators;
       };
