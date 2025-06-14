@@ -64,7 +64,9 @@ export const getDeltaOperationsForElements = (lastKnownElements: LastKnownOrdere
     }
     else if (oldElement && newElement.version !== oldElement.version) {
       const op = {
-        id: newElement.id, version: newElement.version, pos: oldElement.pos, index: oldIndex
+        // oldIndex is guaranteed to be not null, we are setting it only along with oldElement. 
+        // Probably, not a good practice, but I don't want to change the original code too much (yet) If it works, it works
+        id: newElement.id, version: newElement.version, pos: oldElement.pos, index: oldIndex! 
       }
       opsTracker.idMap[newElement.id] = op
       updateOperations.push({ type: 'update', id: op.id, index: op.index, element: newElement })

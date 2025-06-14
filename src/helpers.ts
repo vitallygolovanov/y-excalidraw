@@ -12,9 +12,11 @@ export const moveArrayItem = <T>(arr: T[], from: number, to: number, inPlace = t
 
 // https://stackoverflow.com/a/75988895
 export const debounce = (callback: any, wait: number) => {
-  let timeoutId = null;
-  return (...args) => {
-    clearTimeout(timeoutId);
+  let timeoutId: number | null = null;
+  return (...args: unknown[]): void => {
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+    }
     timeoutId = setTimeout(() => {
       callback(...args);
     }, wait);
