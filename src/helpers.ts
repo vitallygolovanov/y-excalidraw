@@ -12,7 +12,7 @@ export const moveArrayItem = <T>(arr: T[], from: number, to: number, inPlace = t
 
 // https://stackoverflow.com/a/75988895
 export const debounce = (callback: any, wait: number) => {
-  let timeoutId: number | null = null;
+  let timeoutId: NodeJS.Timeout | null = null;
   return (...args: unknown[]): void => {
     if (timeoutId !== null) {
       clearTimeout(timeoutId);
