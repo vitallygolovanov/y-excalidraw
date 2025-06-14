@@ -71,7 +71,7 @@
     "demo:lint": "cd demo && eslint .",
     "demo:preview": "cd demo && vite preview",
     "build": "node ./scripts/build.mjs",
-    "prepublish": "npm run build",
-    "publish": "npm run prepublish && npm publish"
+    "prepare": "npm run build",
+    "publish": "echo \"Skipped actual publishing step.\""
   }
 }
