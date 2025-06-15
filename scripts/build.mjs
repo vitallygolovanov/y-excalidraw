@@ -50,16 +50,12 @@ try {
   }
 
   log('Moving declaration files...');
-  fs.ensureDirSync(tempMove);
-  fs.moveSync(srcDeclarations, tempMove, { overwrite: true });
-
   // 6. Final move and cleanup
-  fs.removeSync(srcBuildDist); // was `src/dist/`
   fs.ensureDirSync(finalOut);
-  fs.copySync(tempMove, finalOut, { overwrite: false, errorOnExist: true });
+  fs.copySync(srcDeclarations, finalOut, { overwrite: false, errorOnExist: true });
 
   // 7. Cleanup temp directory
-  fs.removeSync(tempMove);
+  fs.removeSync(srcBuildDist); // was `src/dist/`
 
   log('✅ Build complete');
 } catch (err) {
