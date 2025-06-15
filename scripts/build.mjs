@@ -28,7 +28,10 @@ try {
 
   // 2. Run esbuild
   log('Running esbuild...');
-  execSync(`node ${esbuildConfig}`, { stdio: 'inherit' });
+  execSync(`node ${esbuildConfig}`, {
+    stdio: 'inherit',
+    cwd: path.resolve(root), 
+  });
 
   // 3. Run tsc from src
   log('Running tsc...');
@@ -47,12 +50,16 @@ try {
   }
 
   log('Moving declaration files...');
+  fs.ensureDirSync(tempMove);
   fs.moveSync(srcDeclarations, tempMove, { overwrite: true });
 
   // 6. Final move and cleanup
   fs.removeSync(srcBuildDist); // was `src/dist/`
   fs.ensureDirSync(finalOut);
-  fs.moveSync(tempMove, finalOut, { overwrite: true });
+  fs.copySync(tempMove, finalOut, { overwrite: false, errorOnExist: true });
+
+  // 7. Cleanup temp directory
+  fs.removeSync(tempMove);
 
   log('✅ Build complete');
 } catch (err) {
