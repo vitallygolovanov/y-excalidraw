@@ -16,18 +16,18 @@
   "bugs": "https://github.com/RahulBadenkal/y-excalidraw/issues",
   "main": "./dist/y-excalidraw.cjs",
   "module": "./dist/y-excalidraw.js",
-  "types": "./dist/src/index.d.ts",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/src/index.d.ts",
+      "types": "./dist/index.d.ts",
       "import": "./dist/y-excalidraw.js",
       "module": "./dist/y-excalidraw.js",
       "require": "./dist/y-excalidraw.cjs"
     },
     "./*": {
-      "types": "./dist/src/*.d.ts",
-      "import": "./dist/src/*.js",
-      "require": "./dist/src/*.cjs"
+      "types": "./dist/*.d.ts",
+      "import": "./dist/*.js",
+      "require": "./dist/*.cjs"
     }
   },
   "files": [
