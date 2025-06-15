@@ -8,6 +8,7 @@ const tsconfigPath = path.join(srcRoot, 'tsconfig.json');
 const esbuildConfig = path.join(root, 'esbuild.config.mjs');
 
 const srcBuildDist = path.join(srcRoot, 'dist');
+const srcDeclarations = path.join(srcBuildDist, 'src');
 const srcTsbuildInfo = path.join(srcBuildDist, 'src', 'tsconfig.tsbuildinfo');
 const finalOut = path.join(root, 'dist');
 const tempMove = path.join(root, '__temp_dist');
@@ -44,7 +45,6 @@ try {
   }
 
   // 5. Move generated declarations
-  const srcDeclarations = path.join(srcBuildDist, 'src');
   if (!fs.existsSync(srcDeclarations)) {
     throw new Error(`Expected declarations folder not found at ${srcDeclarations}`);
   }
@@ -52,7 +52,7 @@ try {
   log('Moving declaration files...');
   // 6. Final move and cleanup
   fs.ensureDirSync(finalOut);
-  fs.copySync(srcDeclarations, finalOut, { overwrite: false, errorOnExist: true });
+  fs.copySync(srcDeclarations, finalOut, { overwrite: false, errorOnExist: false });
 
   // 7. Cleanup temp directory
   fs.removeSync(srcBuildDist); // was `src/dist/`
