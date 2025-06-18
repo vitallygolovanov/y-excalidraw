@@ -1,5 +1,6 @@
 import type {
   BinaryFileData,
+  BinaryFiles,
   Collaborator,
   ExcalidrawImperativeAPI,
   SocketId,
@@ -22,7 +23,45 @@ export class ExcalidrawBinding {
   lastKnownElements: LastKnownOrderedElement[] = []
   lastKnownFileIds: Set<string> = new Set();
 
-  constructor(yElements: Y.Array<Y.Map<any>>, yAssets: Y.Map<any>, api: ExcalidrawImperativeAPI, awareness?: awarenessProtocol.Awareness, undoConfig?: {excalidrawDom: HTMLElement, undoManager: Y.UndoManager}) {
+  /**
+   * Creates a binding between an Excalidraw instance and Yjs shared data structures,
+   * enabling real-time collaborative editing of shapes, assets, and user presence.
+   *
+   * @param yElements - A Y.Array of Y.Map entries representing the shared Excalidraw elements.
+   * @param yAssets   - A Y.Map for storing shared binary assets (images, files) by ID.
+   * @param api       - The Excalidraw Imperative API instance used to read from and write to the canvas.
+   * @param awareness - (optional) A Yjs Awareness instance for propagating and receiving
+   *                    cursor positions, selections, user info, and other presence data.
+   * @param undoConfig - (optional) Configuration for undo/redo support:
+   *                     - excalidrawDom: The root HTMLElement of the Excalidraw canvas.
+   *                     - undoManager: A Y.UndoManager instance managing shared undo/redo.
+   * @param middleware - (optional) Hooks for customizing data before it is synced:
+   *                     - transformLocalFiles:
+   *                        Invoked before pushing local changes into Yjs.
+   *                        Receives the current files, must return possibly mutated copy.
+   *                     - transformRemoteFiles:
+   *                        Invoked when new binary files arrive from remote peers;
+   *                        receives an array of BinaryFileData and must return
+   *                        the final array to be applied.
+   */
+  constructor(
+    yElements: Y.Array<Y.Map<any>>,
+    yAssets: Y.Map<any>,
+    api: ExcalidrawImperativeAPI,
+    awareness?: awarenessProtocol.Awareness,
+    undoConfig?: { excalidrawDom: HTMLElement; undoManager: Y.UndoManager },
+    middleware?: {
+      /** intercept and mutate assets what we push to Yjs */
+      transformLocalFiles?: (files: BinaryFiles) => BinaryFiles;
+      /**
+       * @param files   the incoming remote files
+       * @returns       an array of files to add to Excalidraw, or `undefined` to skip auto‐add
+       */
+      transformRemoteFiles?: (
+        files: BinaryFileData[]
+      ) => BinaryFileData[] | void;
+    }
+  ) {
     this.yElements = yElements;
     this.yAssets = yAssets;
     this.api = api;
@@ -34,7 +73,12 @@ export class ExcalidrawBinding {
     this.subscriptions.push(
       this.api.onChange((_, state, files) => {
         // TODO: Excalidraw doesn't delete the asset from the map when the associated item is deleted.
-        const elements = this.api.getSceneElements()  // This returns without deleted elements
+        let elements = this.api.getSceneElements(); // This returns without deleted elements
+
+        // Invoke a callback if provided
+        if (middleware?.transformLocalFiles) {
+          files = middleware.transformLocalFiles(files);
+        }
 
         // This fires very often even when data is not changed, so keeping a fast procedure to check if anything changed or not
         // Even on move operations, the version property changes so this should work
@@ -78,7 +122,7 @@ export class ExcalidrawBinding {
       }));
 
       const remoteElements = yjsToExcalidraw(this.yElements);
-      const elements = remoteElements.map(el => {
+      const elements = remoteElements.map((el) => {
         if (changedElementIds.has(el.id)) {
           return el;
         }
@@ -103,9 +147,18 @@ export class ExcalidrawBinding {
         return
       }
 
-      const addedFiles = [...events.keysChanged].map(
-        (key) => this.yAssets.get(key) as BinaryFileData,
+      let addedFiles = [...events.keysChanged].map(
+        (key) => this.yAssets.get(key) as BinaryFileData
       );
+
+      if (middleware?.transformRemoteFiles) {
+        const res = middleware.transformRemoteFiles(addedFiles);
+
+        if (!res) return; // If the middleware indicates to skip auto-adding files, we do not add them
+
+        addedFiles = res;
+      }
+
       this.api.addFiles(addedFiles);
     }
     this.yAssets.observe(_remoteFilesChangeHandler);  // only observe and not observe deep as assets are only added/deleted not updated
@@ -176,10 +229,19 @@ export class ExcalidrawBinding {
       })    
     this.api.updateScene({ elements: initialValue });
 
-    // init assets
-    this.api.addFiles(
-      [...this.yAssets.keys()].map((key) => this.yAssets.get(key) as BinaryFileData),
+    const initialAssets = [...this.yAssets.keys()].map(
+      (key) => this.yAssets.get(key) as BinaryFileData
     );
+    // init assets
+    if (middleware?.transformRemoteFiles) {
+      const res = middleware?.transformRemoteFiles(initialAssets);
+
+      if (res) {
+        this.api.addFiles(res);
+      }
+    } else {
+      this.api.addFiles(initialAssets);
+    }
 
     // init collaborators
     const collaborators = new Map()
