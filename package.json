@@ -73,7 +73,7 @@
     "demo:lint": "cd demo && eslint .",
     "demo:preview": "cd demo && vite preview",
     "build": "node ./scripts/build.mjs",
-    "prepare": "npm run build",
+    "prepare": "node ./scripts/build.mjs --ignoreTypeErrors",
     "publish": "echo \"Skipped actual publishing step.\""
   }
 }

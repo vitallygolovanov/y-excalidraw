@@ -13,6 +13,8 @@ const srcTsbuildInfo = path.join(srcBuildDist, 'src', 'tsconfig.tsbuildinfo');
 const finalOut = path.join(root, 'dist');
 const tempMove = path.join(root, '__temp_dist');
 
+const ignoreTypeErrorsFlag = process.argv.includes('--ignoreTypeErrors');
+
 function log(msg) {
   console.log(`[build] ${msg}`);
 }
@@ -36,7 +38,19 @@ try {
 
   // 3. Run tsc from src
   log('Running tsc...');
-  execSync(`tsc --emitDeclarationOnly -p ${tsconfigPath}`, { stdio: 'inherit' });
+  // This is required to ensure smooth operation when using pnpm in monorepo setups 
+  // with local package overrides. Pnpm runs prepare scripts in parallel,
+  // and Excalidraw's prepare script usually takes longer to complete,
+  // than y-excalidraw's prepare script, leading to missing module errors.
+  // Therefore, we catch the error here and log it when --ignoreTypeErrorsFlag is provided.
+  try {
+    execSync(`tsc --emitDeclarationOnly -p ${tsconfigPath}`, { stdio: 'inherit' });
+  } catch (err) {
+    if (!ignoreTypeErrorsFlag) {
+      throw new Error('TypeScript compilation failed. Use --ignoreTypeErrors to skip type checks.');
+    }
+    log('TypeScript compilation failed, but continuing due to --ignoreTypeErrors flag.');
+  }
 
   // 4. Remove tsbuildinfo if it exists
   if (fs.existsSync(srcTsbuildInfo)) {
