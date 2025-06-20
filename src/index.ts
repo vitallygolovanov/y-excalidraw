@@ -6,9 +6,10 @@ import type {
   SocketId,
 } from "@excalidraw/excalidraw/types";
 import type * as awarenessProtocol from "y-protocols/awareness";
-import * as Y from "yjs"
+import * as Y from "yjs";
 import { areElementsSame, debounce, yjsToExcalidraw } from "./helpers";
-import { applyAssetOperations, applyElementOperations, getDeltaOperationsForAssets, getDeltaOperationsForElements, LastKnownOrderedElement, Operation } from "./diff";
+import { applyAssetOperations, applyElementOperations, FixedIndex, getDeltaOperationsForAssets, getDeltaOperationsForElements, LastKnownOrderedElement, NullableOrderedRemoteElement, Operation, OrderedRemoteElement } from "./diff";
+import { ExcalidrawElement, NonDeletedExcalidrawElement, Ordered } from "@excalidraw/excalidraw/element/types";
 export { yjsToExcalidraw }
 
 export class ExcalidrawBinding {
@@ -58,8 +59,11 @@ export class ExcalidrawBinding {
        * @returns       an array of files to add to Excalidraw, or `undefined` to skip auto‐add
        */
       transformRemoteFiles?: (
-        files: BinaryFileData[]
+        files: BinaryFileData[],
+        lastKnownElements: ExcalidrawElement[]
       ) => BinaryFileData[] | void;
+      transformLocalElements?: (elements: readonly Ordered<NonDeletedExcalidrawElement>[]) => ExcalidrawElement[];
+      transformRemoteElements?: (elements: OrderedRemoteElement[]) => NullableOrderedRemoteElement[];
     }
   ) {
     this.yElements = yElements;
@@ -75,7 +79,7 @@ export class ExcalidrawBinding {
         // TODO: Excalidraw doesn't delete the asset from the map when the associated item is deleted.
         let elements = this.api.getSceneElements(); // This returns without deleted elements
 
-        // Invoke a callback if provided
+        // Invoke a callback if provided. Do this before any filtering to ensure the middleware can see all elements.
         if (middleware?.transformLocalFiles) {
           files = middleware.transformLocalFiles(files);
         }
@@ -84,9 +88,15 @@ export class ExcalidrawBinding {
         // Even on move operations, the version property changes so this should work
         let operations: Operation[] = []
         if (!areElementsSame(this.lastKnownElements, elements)) {
+          if (middleware?.transformLocalElements) {
+            elements = middleware.transformLocalElements(elements);
+          }        
+          
+
           const res = getDeltaOperationsForElements(this.lastKnownElements, elements)
           operations = res.operations
           this.lastKnownElements = res.lastKnownElements
+
           applyElementOperations(this.yElements, operations, this)
         }
 
@@ -122,11 +132,43 @@ export class ExcalidrawBinding {
       }));
 
       const remoteElements = yjsToExcalidraw(this.yElements);
+
+      if (middleware?.transformRemoteElements) {
+        const changedElements: OrderedRemoteElement[] = []
+
+        for (let i = 0; i < remoteElements.length; i++) {
+          const el = remoteElements[i];
+          if (changedElementIds.has(el.id)) {
+            changedElements.push({ index: i as FixedIndex, element: el });
+          }
+        }
+
+        const res = middleware.transformRemoteElements(changedElements);
+        
+        for (let i = 0; i < res.length; i++) {
+          // TODO consider removing undefined transformed elements form the remoteElements array
+          const { index, element } = res[i];
+          remoteElements[index] = element;
+        }
+
+        remoteElements.filter((el) => el !== undefined);
+      }
+
+      // Map existing elements by ID for quick lookup to avoid O(n × m) complexity
+      const existingElements = this.api.getSceneElements();
+      const existingElementsById = new Map<string, typeof existingElements>();
+
+      // Use boomer loop for performance with large whiteboards 
+      for (let i = 0; i < existingElements.length; i++) {
+        existingElementsById.set(existingElements[i].id, existingElements[i]);
+      }
+
+      // remoteElements array is expected to be relatively small, so we can afford a higher order method here (to be seen)
       const elements = remoteElements.map((el) => {
         if (changedElementIds.has(el.id)) {
           return el;
         }
-        return this.api.getSceneElements().find(existingEl => existingEl.id === el.id) || el;
+        return existingElementsById.get(el.id) || el;
       });
 
       this.lastKnownElements = this.yElements.toArray()
@@ -152,7 +194,7 @@ export class ExcalidrawBinding {
       );
 
       if (middleware?.transformRemoteFiles) {
-        const res = middleware.transformRemoteFiles(addedFiles);
+        const res = middleware.transformRemoteFiles(addedFiles, yjsToExcalidraw(this.yElements));
 
         if (!res) return; // If the middleware indicates to skip auto-adding files, we do not add them
 
@@ -182,7 +224,7 @@ export class ExcalidrawBinding {
         const states = awareness.getStates();
 
         const collaborators = new Map(this.collaborators);
-        const update = [...added, ...updated];
+        const update = [...new Set([...added, ...updated])];
         for (const id of update) {
           const state = states.get(id);
           if (!state) {
@@ -234,7 +276,7 @@ export class ExcalidrawBinding {
     );
     // init assets
     if (middleware?.transformRemoteFiles) {
-      const res = middleware?.transformRemoteFiles(initialAssets);
+      const res = middleware?.transformRemoteFiles(initialAssets, yjsToExcalidraw(this.yElements));
 
       if (res) {
         this.api.addFiles(res);
@@ -247,8 +289,11 @@ export class ExcalidrawBinding {
     const collaborators = new Map()
 
     if (this.awareness) {
-      for (let id of this.awareness.getStates().keys()) {
-        const state = this.awareness.getStates().get(id)
+      const states = this.awareness.getStates();
+      const keys = states.keys();
+
+      for (let id of keys) {
+        const state = states.get(id)
 
         if (!state) {
           continue;

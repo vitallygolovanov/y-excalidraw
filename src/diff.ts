@@ -5,6 +5,10 @@ import * as Y from 'yjs'
 import { BinaryFileData, BinaryFiles } from "@excalidraw/excalidraw/types";
 import { ExcalidrawBinding } from "./index";
 
+export type FixedIndex = number & { _brand: "FixedIndex" };
+export type OrderedRemoteElement = { index: FixedIndex, element: ExcalidrawElement}
+export type NullableOrderedRemoteElement = { index: FixedIndex, element: ExcalidrawElement | undefined}
+
 
 export type UpdateOperation = { type: 'update', id: string, index: number, element: ExcalidrawElement }
 export type AppendOperation = { type: 'append', id: string, pos: string, element: ExcalidrawElement }
