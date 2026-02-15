@@ -341,6 +341,31 @@ export class ExcalidrawBinding {
 
     // listen for undo/redo keys
     const _keyPressHandler = (event: KeyboardEvent) => {
+      // Don't hijack undo/redo from editable targets (e.g. BlockNote/contentEditable) embedded into Excalidraw.
+      // This listener runs in capture phase, so the editor cannot reliably stop propagation before we see it.
+      if (event.defaultPrevented) return;
+
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        const tagName = target.tagName;
+        const isNativeInput =
+          tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT";
+        const isEditable = target.isContentEditable;
+        const isRoleTextbox = target.getAttribute("role") === "textbox";
+        const isInsideBlackboardEditor = Boolean(
+          target.closest("[data-embedded-editor]"),
+        );
+
+        if (
+          isNativeInput ||
+          isEditable ||
+          isRoleTextbox ||
+          isInsideBlackboardEditor
+        ) {
+          return;
+        }
+      }
+
       if (event.ctrlKey && event.shiftKey && event.key?.toLocaleLowerCase() === 'z') {
         event.stopPropagation();
         undoManager.redo()
