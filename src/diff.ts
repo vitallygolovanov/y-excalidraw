@@ -250,12 +250,30 @@ export const applyElementOperations = (yElements: Y.Array<Y.Map<any>>, operation
         case "delete":
         case "bulkDelete": {
           if (op.type === "delete") {
-            yElements.delete(idYjsIndexMap[op.id], 1)
+            const deleteIndex = idYjsIndexMap[op.id]
+            if (typeof deleteIndex === "number" && deleteIndex >= 0 && deleteIndex < yElements.length) {
+              yElements.delete(deleteIndex, 1)
+              _updateYjsIndexMap()
+            }
           }
           else {
-            yElements.delete(idYjsIndexMap[op.id], op.data.length)
+            const indicesToDelete = op.data
+              .map((item) => idYjsIndexMap[item.id])
+              .filter((index): index is number => (
+                typeof index === "number" && index >= 0 && index < yElements.length
+              ))
+              .sort((a, b) => b - a)
+
+            for (const index of indicesToDelete) {
+              if (index >= 0 && index < yElements.length) {
+                yElements.delete(index, 1)
+              }
+            }
+
+            if (indicesToDelete.length > 0) {
+              _updateYjsIndexMap()
+            }
           }
-          _updateYjsIndexMap()
           break
         }
         case "move": {
