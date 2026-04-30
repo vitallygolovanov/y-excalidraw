@@ -18,6 +18,7 @@ export class ExcalidrawBinding {
   api: ExcalidrawImperativeAPI;
   awareness?: awarenessProtocol.Awareness;
   undoManager?: Y.UndoManager;
+  collaboratorsUpdateTimer: ReturnType<typeof setTimeout> | null = null;
 
   subscriptions: (() => void)[] = [];
   collaborators: Map<SocketId, Collaborator> = new Map();
@@ -72,6 +73,7 @@ export class ExcalidrawBinding {
     this.awareness = awareness;
     const excalidrawDom = undoConfig?.excalidrawDom
     this.undoManager = undoConfig?.undoManager
+    this.collaboratorsUpdateTimer = null;
 
     // Listener for changes made on excalidraw by current user
     this.subscriptions.push(
@@ -235,6 +237,7 @@ export class ExcalidrawBinding {
             pointer: state.pointer,
             button: state.button,
             selectedElementIds: state.selectedElementIds,
+            id: state.user?.id,
             username: state.user?.name,
             color: state.user?.color,
             avatarUrl: state.user?.avatarUrl,
@@ -245,8 +248,8 @@ export class ExcalidrawBinding {
           collaborators.delete(id.toString() as SocketId);
         }
         collaborators.delete(awareness.clientID.toString() as SocketId);
-        this.api.updateScene({ collaborators });
         this.collaborators = collaborators;
+        this.scheduleCollaboratorsUpdate(collaborators);
       };
       this.awareness.on("change", _remoteAwarenessChangeHandler);
       this.subscriptions.push(() => {
@@ -303,6 +306,7 @@ export class ExcalidrawBinding {
           pointer: state.pointer,
           button: state.button,
           selectedElementIds: state.selectedElementIds,
+          id: state.user?.id,
           username: state.user?.name,
           color: state.user?.color,
           avatarUrl: state.user?.avatarUrl,
@@ -311,8 +315,20 @@ export class ExcalidrawBinding {
       }
     }
 
-    this.api.updateScene({ collaborators });
     this.collaborators = collaborators;
+    this.scheduleCollaboratorsUpdate(collaborators);
+  }
+
+  private scheduleCollaboratorsUpdate(collaborators: Map<SocketId, Collaborator>) {
+    if (this.collaboratorsUpdateTimer) {
+      clearTimeout(this.collaboratorsUpdateTimer);
+      this.collaboratorsUpdateTimer = null;
+    }
+
+    this.collaboratorsUpdateTimer = setTimeout(() => {
+      this.collaboratorsUpdateTimer = null;
+      this.api.updateScene({ collaborators });
+    }, 0);
   }
 
   public onPointerUpdate = (payload: {
@@ -420,6 +436,10 @@ export class ExcalidrawBinding {
   destroy() {
     for (const s of this.subscriptions) {
       s();
+    }
+    if (this.collaboratorsUpdateTimer) {
+      clearTimeout(this.collaboratorsUpdateTimer);
+      this.collaboratorsUpdateTimer = null;
     }
   }
 }
