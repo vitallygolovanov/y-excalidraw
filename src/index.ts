@@ -8,9 +8,15 @@ import type {
 import type * as awarenessProtocol from "y-protocols/awareness";
 import * as Y from "yjs";
 import { areElementsSame, debounce, yjsToExcalidraw } from "./helpers";
-import { applyAssetOperations, applyElementOperations, FixedIndex, getDeltaOperationsForAssets, getDeltaOperationsForElements, LastKnownOrderedElement, NullableOrderedRemoteElement, Operation, OrderedRemoteElement } from "./diff";
+import { applyAssetOperations, applyElementOperations, classifyElementOperationsForDestructiveWrite, DestructiveWriteClassification, FixedIndex, getDeltaOperationsForAssets, getDeltaOperationsForElements, LastKnownOrderedElement, NullableOrderedRemoteElement, Operation, OrderedRemoteElement } from "./diff";
 import { ExcalidrawElement, NonDeletedExcalidrawElement, Ordered } from "@excalidraw/excalidraw/element/types";
 export { yjsToExcalidraw }
+
+export type DestructiveWriteEvent = {
+  classification: Exclude<DestructiveWriteClassification, { kind: "safe" }>;
+  decision: "allowed" | "blocked";
+  reason: string | null;
+};
 
 export class ExcalidrawBinding {
   yElements: Y.Array<Y.Map<any>>
@@ -24,6 +30,8 @@ export class ExcalidrawBinding {
   collaborators: Map<SocketId, Collaborator> = new Map();
   lastKnownElements: LastKnownOrderedElement[] = []
   lastKnownFileIds: Set<string> = new Set();
+  lastKnownNonEmptyElementCount = 0;
+  private pendingDestructiveWriteReason: string | null = null;
 
   /**
    * Creates a binding between an Excalidraw instance and Yjs shared data structures,
@@ -65,6 +73,7 @@ export class ExcalidrawBinding {
       ) => BinaryFileData[] | void;
       transformLocalElements?: (elements: readonly Ordered<NonDeletedExcalidrawElement>[]) => ExcalidrawElement[];
       transformRemoteElements?: (elements: OrderedRemoteElement[]) => NullableOrderedRemoteElement[];
+      onDestructiveWrite?: (event: DestructiveWriteEvent) => void;
     }
   ) {
     this.yElements = yElements;
@@ -96,8 +105,45 @@ export class ExcalidrawBinding {
           
 
           const res = getDeltaOperationsForElements(this.lastKnownElements, elements)
+          const classification = classifyElementOperationsForDestructiveWrite({
+            previousCount: this.lastKnownElements.length,
+            nextCount: res.lastKnownElements.length,
+            operations: res.operations,
+          });
+          const pendingDestructiveWriteReason = this.pendingDestructiveWriteReason;
+          if (pendingDestructiveWriteReason) {
+            this.pendingDestructiveWriteReason = null;
+          }
+
+          if (classification.kind !== "safe") {
+            if (!pendingDestructiveWriteReason) {
+              console.warn("[ExcalidrawBinding] Blocked destructive scene write", {
+                ...classification,
+                lastKnownNonEmptyElementCount: this.lastKnownNonEmptyElementCount,
+              });
+              middleware?.onDestructiveWrite?.({
+                classification,
+                decision: "blocked",
+                reason: null,
+              });
+              return;
+            }
+
+            console.warn("[ExcalidrawBinding] Allowing destructive scene write", {
+              ...classification,
+              lastKnownNonEmptyElementCount: this.lastKnownNonEmptyElementCount,
+              reason: pendingDestructiveWriteReason,
+            });
+            middleware?.onDestructiveWrite?.({
+              classification,
+              decision: "allowed",
+              reason: pendingDestructiveWriteReason,
+            });
+          }
+
           operations = res.operations
           this.lastKnownElements = res.lastKnownElements
+          this.recordNonEmptyElementBaseline(res.lastKnownElements.length)
 
           applyElementOperations(this.yElements, operations, this)
         }
@@ -173,6 +219,13 @@ export class ExcalidrawBinding {
         return existingElementsById.get(el.id) || el;
       });
 
+      if (remoteElements.length === 0 && this.lastKnownNonEmptyElementCount > 0) {
+        console.warn("[ExcalidrawBinding] Remote scene became empty", {
+          previousNonEmptyElementCount: this.lastKnownNonEmptyElementCount,
+          changedElementCount: changedElementIds.size,
+        });
+      }
+
       this.lastKnownElements = this.yElements.toArray()
         .map((x) => ({ id: x.get("el").id, version: x.get("el").version, pos: x.get("pos") }))
         .sort((a, b) => {
@@ -180,6 +233,7 @@ export class ExcalidrawBinding {
           const key2 = b.pos;
           return key1 > key2 ? 1 : (key1 < key2 ? -1 : 0)
         })
+      this.recordNonEmptyElementBaseline(this.lastKnownElements.length)
       this.api.updateScene({ elements })
     }
     this.yElements.observeDeep(_remoteElementsChangeHandler)
@@ -271,7 +325,8 @@ export class ExcalidrawBinding {
         const key1 = a.pos;
         const key2 = b.pos;
         return key1 > key2 ? 1 : (key1 < key2 ? -1 : 0)
-      })    
+      })
+    this.recordNonEmptyElementBaseline(this.lastKnownElements.length)
     this.api.updateScene({ elements: initialValue });
 
     const initialAssets = [...this.yAssets.keys()].map(
@@ -317,6 +372,16 @@ export class ExcalidrawBinding {
 
     this.collaborators = collaborators;
     this.scheduleCollaboratorsUpdate(collaborators);
+  }
+
+  private recordNonEmptyElementBaseline(nextCount: number) {
+    if (nextCount > 0) {
+      this.lastKnownNonEmptyElementCount = nextCount;
+    }
+  }
+
+  public allowNextDestructiveWrite(reason = "unspecified") {
+    this.pendingDestructiveWriteReason = reason;
   }
 
   private scheduleCollaboratorsUpdate(collaborators: Map<SocketId, Collaborator>) {

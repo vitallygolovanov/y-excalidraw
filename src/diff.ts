@@ -19,9 +19,70 @@ export type BulkDeleteOperation = { type: 'bulkDelete', id: string, index: numbe
 
 export type Operation = UpdateOperation | AppendOperation | DeleteOperation | MoveOperation | BulkAppendOperation | BulkDeleteOperation
 
+export type DestructiveWriteClassification =
+  | {
+      kind: 'safe'
+      previousCount: number
+      nextCount: number
+      deleteCount: number
+    }
+  | {
+      kind: 'full-scene-clear'
+      previousCount: number
+      nextCount: number
+      deleteCount: number
+    }
+
 type OperationTracker = { elementIds: string[], idMap: { [id: string]: { id: string, version: number, pos: string; index: number } } }
 
 export type LastKnownOrderedElement = {id: string, version: number, pos: string}
+
+export const countDeletedElementsInOperations = (operations: readonly Operation[]): number => {
+  let deleteCount = 0
+
+  for (const operation of operations) {
+    switch (operation.type) {
+      case 'delete': {
+        deleteCount += 1
+        break
+      }
+      case 'bulkDelete': {
+        deleteCount += operation.data.length
+        break
+      }
+    }
+  }
+
+  return deleteCount
+}
+
+export const classifyElementOperationsForDestructiveWrite = ({
+  previousCount,
+  nextCount,
+  operations,
+}: {
+  previousCount: number
+  nextCount: number
+  operations: readonly Operation[]
+}): DestructiveWriteClassification => {
+  const deleteCount = countDeletedElementsInOperations(operations)
+
+  if (previousCount > 0 && nextCount === 0 && deleteCount >= previousCount) {
+    return {
+      kind: 'full-scene-clear',
+      previousCount,
+      nextCount,
+      deleteCount,
+    }
+  }
+
+  return {
+    kind: 'safe',
+    previousCount,
+    nextCount,
+    deleteCount,
+  }
+}
 
 export const getDeltaOperationsForElements = (lastKnownElements: LastKnownOrderedElement[], newElements: readonly NonDeletedExcalidrawElement[], bulkify = true): {operations: Operation[], lastKnownElements: LastKnownOrderedElement[]} => {
   // Final operations are always in this order -> All updates + All appends + All deletes + All moves
