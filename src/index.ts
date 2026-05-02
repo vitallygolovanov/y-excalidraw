@@ -204,7 +204,7 @@ export class ExcalidrawBinding {
 
       // Map existing elements by ID for quick lookup to avoid O(n × m) complexity
       const existingElements = this.api.getSceneElements();
-      const existingElementsById = new Map<string, typeof existingElements>();
+      const existingElementsById = new Map<string, (typeof existingElements)[number]>();
 
       // Use boomer loop for performance with large whiteboards 
       for (let i = 0; i < existingElements.length; i++) {
