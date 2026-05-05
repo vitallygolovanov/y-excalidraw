@@ -14,10 +14,11 @@ export type UpdateOperation = { type: 'update', id: string, index: number, eleme
 export type AppendOperation = { type: 'append', id: string, pos: string, element: ExcalidrawElement }
 export type DeleteOperation = { type: 'delete', id: string, index: number }
 export type MoveOperation = { type: 'move', id: string, fromIndex: number, toIndex: number, pos: string; }
+export type ReindexOperation = { type: 'reindex', data: { id: string, pos: string }[] }
 export type BulkAppendOperation = { type: 'bulkAppend', data: { id: string, pos: string; element: ExcalidrawElement }[] }
 export type BulkDeleteOperation = { type: 'bulkDelete', id: string, index: number, data: { id: string, index: number }[] }
 
-export type Operation = UpdateOperation | AppendOperation | DeleteOperation | MoveOperation | BulkAppendOperation | BulkDeleteOperation
+export type Operation = UpdateOperation | AppendOperation | DeleteOperation | MoveOperation | ReindexOperation | BulkAppendOperation | BulkDeleteOperation
 
 export type DestructiveWriteClassification =
   | {
@@ -36,6 +37,59 @@ export type DestructiveWriteClassification =
 type OperationTracker = { elementIds: string[], idMap: { [id: string]: { id: string, version: number, pos: string; index: number } } }
 
 export type LastKnownOrderedElement = {id: string, version: number, pos: string}
+export type InvalidMoveOrderingRecoveryEvent = {
+  id: string
+  fromIndex: number
+  toIndex: number
+  leftSortIndex: string
+  rightSortIndex: string
+  orderWindow: { id: string, index: number, pos: string | null }[]
+}
+
+const getMoveBoundarySortIndices = (opsTracker: OperationTracker, fromIndex: number, toIndex: number) => {
+  let leftSortIndex: string | null = null
+  let rightSortIndex: string | null = null
+
+  if (fromIndex >= 0 && fromIndex < toIndex) {
+    leftSortIndex = opsTracker.idMap[opsTracker.elementIds[toIndex]]?.pos || null
+    rightSortIndex = opsTracker.idMap[opsTracker.elementIds[toIndex + 1]]?.pos || null
+  }
+  else {
+    leftSortIndex = opsTracker.idMap[opsTracker.elementIds[toIndex - 1]]?.pos || null
+    rightSortIndex = opsTracker.idMap[opsTracker.elementIds[toIndex]]?.pos || null
+  }
+
+  return { leftSortIndex, rightSortIndex }
+}
+
+const buildTrackedOrderWindow = (opsTracker: OperationTracker, centerIndex: number, radius = 2) => {
+  const start = Math.max(0, centerIndex - radius)
+  const end = Math.min(opsTracker.elementIds.length, centerIndex + radius + 1)
+
+  return opsTracker.elementIds.slice(start, end).map((trackedId, offset) => ({
+    id: trackedId,
+    index: start + offset,
+    pos: opsTracker.idMap[trackedId]?.pos || null,
+  }))
+}
+
+const reindexTrackedPositions = (opsTracker: OperationTracker, stableIds: ReadonlySet<string>) => {
+  let previousSortIndex: string | null = null
+  const data: { id: string, pos: string }[] = []
+
+  for (const id of opsTracker.elementIds) {
+    if (!stableIds.has(id)) {
+      continue
+    }
+
+    const pos = generateKeyBetween(previousSortIndex, null)
+    previousSortIndex = pos
+    opsTracker.idMap[id].pos = pos
+    data.push({ id, pos })
+  }
+
+  return data
+}
 
 export const countDeletedElementsInOperations = (operations: readonly Operation[]): number => {
   let deleteCount = 0
@@ -84,12 +138,21 @@ export const classifyElementOperationsForDestructiveWrite = ({
   }
 }
 
-export const getDeltaOperationsForElements = (lastKnownElements: LastKnownOrderedElement[], newElements: readonly NonDeletedExcalidrawElement[], bulkify = true): {operations: Operation[], lastKnownElements: LastKnownOrderedElement[]} => {
+export const getDeltaOperationsForElements = (
+  lastKnownElements: LastKnownOrderedElement[],
+  newElements: readonly NonDeletedExcalidrawElement[],
+  bulkify = true,
+  options?: {
+    onInvalidMoveOrderingRecovery?: (event: InvalidMoveOrderingRecoveryEvent) => void
+  },
+): {operations: Operation[], lastKnownElements: LastKnownOrderedElement[]} => {
   // Final operations are always in this order -> All updates + All appends + All deletes + All moves
   const updateOperations: UpdateOperation[] = []
   const appendOperations: AppendOperation[] = []
   const deleteOperations: DeleteOperation[] = []
   const moveOperations: MoveOperation[] = []
+  const reindexOperations: ReindexOperation[] = []
+  const stableIds = new Set(lastKnownElements.map((x) => x.id))
 
   // Updates the old elements as and when an operation is performed on it
   const opsTracker: OperationTracker = {
@@ -165,21 +228,34 @@ export const getDeltaOperationsForElements = (lastKnownElements: LastKnownOrdere
     const { index: fromIndex } = opsTracker.idMap[id]
 
     if (toIndex !== fromIndex) {
-      // The move code was inspired by this comment -> https://discuss.yjs.dev/t/moving-elements-in-lists/92/15
-      let leftSortIndex: string | null = null;
-      let rightSortIndex: string | null = null;
-      if (fromIndex >= 0 && fromIndex < toIndex) {
-        // we're moving an item down in the list
-        leftSortIndex = opsTracker.idMap[opsTracker.elementIds[toIndex]]?.pos || null;
-        rightSortIndex = opsTracker.idMap[opsTracker.elementIds[toIndex + 1]]?.pos || null;
-      } else {
-        // we are moving up in list
-        leftSortIndex = opsTracker.idMap[opsTracker.elementIds[toIndex - 1]]?.pos || null;
-        rightSortIndex = opsTracker.idMap[opsTracker.elementIds[toIndex]]?.pos || null;
+      let { leftSortIndex, rightSortIndex } = getMoveBoundarySortIndices(opsTracker, fromIndex, toIndex)
+
+      if (leftSortIndex !== null && rightSortIndex !== null && leftSortIndex >= rightSortIndex) {
+        const orderWindow = buildTrackedOrderWindow(opsTracker, toIndex)
+        const data = reindexTrackedPositions(opsTracker, stableIds)
+        const recoveryEvent: InvalidMoveOrderingRecoveryEvent = {
+          id,
+          fromIndex,
+          toIndex,
+          leftSortIndex,
+          rightSortIndex,
+          orderWindow,
+        }
+
+        if (data.length > 0) {
+          reindexOperations.push({ type: 'reindex', data })
+        }
+
+        console.warn('[ExcalidrawBinding] Reindexed invalid move ordering', {
+          ...recoveryEvent,
+        })
+        options?.onInvalidMoveOrderingRecovery?.(recoveryEvent)
+
+        ;({ leftSortIndex, rightSortIndex } = getMoveBoundarySortIndices(opsTracker, fromIndex, toIndex))
       }
-      
+
       const newSortIndex = generateKeyBetween(leftSortIndex, rightSortIndex)
-   
+
       // move to correct position, O(n)
       opsTracker.elementIds = moveArrayItem(opsTracker.elementIds, fromIndex, toIndex, true)
       opsTracker.idMap[id].pos = newSortIndex  // update the element's sort index
@@ -223,8 +299,8 @@ export const getDeltaOperationsForElements = (lastKnownElements: LastKnownOrdere
   }
 
   const operations: Operation[] = !bulkify ?
-    [...updateOperations, ...appendOperations, ...deleteOperations, ...moveOperations] :
-    [...updateOperations, ...bulkAppendOperations, ...bulkDeleteOperations, ...moveOperations]
+    [...updateOperations, ...appendOperations, ...deleteOperations, ...reindexOperations, ...moveOperations] :
+    [...updateOperations, ...bulkAppendOperations, ...bulkDeleteOperations, ...reindexOperations, ...moveOperations]
 
   const updatedLastKnownElements = opsTracker.elementIds.map((x) => {
     const {index, ...rest} = opsTracker.idMap[x]
@@ -333,6 +409,15 @@ export const applyElementOperations = (yElements: Y.Array<Y.Map<any>>, operation
 
             if (indicesToDelete.length > 0) {
               _updateYjsIndexMap()
+            }
+          }
+          break
+        }
+        case "reindex": {
+          for (const item of op.data) {
+            const yjsIndex = idYjsIndexMap[item.id]
+            if (typeof yjsIndex === "number" && yjsIndex >= 0 && yjsIndex < yElements.length) {
+              yElements.get(yjsIndex).set("pos", item.pos)
             }
           }
           break

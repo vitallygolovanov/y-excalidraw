@@ -8,7 +8,7 @@ import type {
 import type * as awarenessProtocol from "y-protocols/awareness";
 import * as Y from "yjs";
 import { areElementsSame, debounce, yjsToExcalidraw } from "./helpers";
-import { applyAssetOperations, applyElementOperations, classifyElementOperationsForDestructiveWrite, DestructiveWriteClassification, FixedIndex, getDeltaOperationsForAssets, getDeltaOperationsForElements, LastKnownOrderedElement, NullableOrderedRemoteElement, Operation, OrderedRemoteElement } from "./diff";
+import { applyAssetOperations, applyElementOperations, classifyElementOperationsForDestructiveWrite, DestructiveWriteClassification, FixedIndex, getDeltaOperationsForAssets, getDeltaOperationsForElements, InvalidMoveOrderingRecoveryEvent, LastKnownOrderedElement, NullableOrderedRemoteElement, Operation, OrderedRemoteElement } from "./diff";
 import { ExcalidrawElement, NonDeletedExcalidrawElement, Ordered } from "@excalidraw/excalidraw/element/types";
 export { yjsToExcalidraw }
 
@@ -17,6 +17,8 @@ export type DestructiveWriteEvent = {
   decision: "allowed" | "blocked";
   reason: string | null;
 };
+
+export type InvalidMoveOrderingRecoveryMiddlewareEvent = InvalidMoveOrderingRecoveryEvent;
 
 export class ExcalidrawBinding {
   yElements: Y.Array<Y.Map<any>>
@@ -74,6 +76,7 @@ export class ExcalidrawBinding {
       transformLocalElements?: (elements: readonly Ordered<NonDeletedExcalidrawElement>[]) => ExcalidrawElement[];
       transformRemoteElements?: (elements: OrderedRemoteElement[]) => NullableOrderedRemoteElement[];
       onDestructiveWrite?: (event: DestructiveWriteEvent) => void;
+      onInvalidMoveOrderingRecovery?: (event: InvalidMoveOrderingRecoveryMiddlewareEvent) => void;
     }
   ) {
     this.yElements = yElements;
@@ -104,7 +107,9 @@ export class ExcalidrawBinding {
           }        
           
 
-          const res = getDeltaOperationsForElements(this.lastKnownElements, elements)
+          const res = getDeltaOperationsForElements(this.lastKnownElements, elements, true, {
+            onInvalidMoveOrderingRecovery: middleware?.onInvalidMoveOrderingRecovery,
+          })
           const classification = classifyElementOperationsForDestructiveWrite({
             previousCount: this.lastKnownElements.length,
             nextCount: res.lastKnownElements.length,

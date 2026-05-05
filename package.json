@@ -73,7 +73,9 @@
     "demo:lint": "cd demo && eslint .",
     "demo:preview": "cd demo && vite preview",
     "build": "node ./scripts/build.mjs",
+    "repro:invalid-move-order": "node ./scripts/repro-invalid-move-order.mjs",
     "prepare": "node ./scripts/build.mjs --ignoreTypeErrors",
+    "test": "node --test ./test/**/*.test.mjs",
     "publish": "echo \"Skipped actual publishing step.\""
   }
 }
