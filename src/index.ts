@@ -7,7 +7,7 @@ import type {
 } from "@excalidraw/excalidraw/types";
 import type * as awarenessProtocol from "y-protocols/awareness";
 import * as Y from "yjs";
-import { areElementsSame, debounce, yjsToExcalidraw } from "./helpers";
+import { areElementsSame, debounce, yjsToExcalidraw, yjsToOrderedSnapshot } from "./helpers";
 import { applyAssetOperations, applyElementOperations, classifyElementOperationsForDestructiveWrite, DestructiveWriteClassification, FixedIndex, getDeltaOperationsForAssets, getDeltaOperationsForElements, InvalidMoveOrderingRecoveryEvent, LastKnownOrderedElement, NullableOrderedRemoteElement, Operation, OrderedRemoteElement } from "./diff";
 import { ExcalidrawElement, NonDeletedExcalidrawElement, Ordered } from "@excalidraw/excalidraw/element/types";
 export { yjsToExcalidraw }
@@ -231,13 +231,7 @@ export class ExcalidrawBinding {
         });
       }
 
-      this.lastKnownElements = this.yElements.toArray()
-        .map((x) => ({ id: x.get("el").id, version: x.get("el").version, pos: x.get("pos") }))
-        .sort((a, b) => {
-          const key1 = a.pos;
-          const key2 = b.pos;
-          return key1 > key2 ? 1 : (key1 < key2 ? -1 : 0)
-        })
+      this.lastKnownElements = yjsToOrderedSnapshot(this.yElements)
       this.recordNonEmptyElementBaseline(this.lastKnownElements.length)
       this.api.updateScene({ elements })
     }
@@ -325,13 +319,7 @@ export class ExcalidrawBinding {
 
     // init elements
     const initialValue = yjsToExcalidraw(this.yElements)
-    this.lastKnownElements = this.yElements.toArray()
-      .map((x) => ({ id: x.get("el").id, version: x.get("el").version, pos: x.get("pos") }))
-      .sort((a, b) => {
-        const key1 = a.pos;
-        const key2 = b.pos;
-        return key1 > key2 ? 1 : (key1 < key2 ? -1 : 0)
-      })
+    this.lastKnownElements = yjsToOrderedSnapshot(this.yElements)
     this.recordNonEmptyElementBaseline(this.lastKnownElements.length)
     this.api.updateScene({ elements: initialValue });
 
