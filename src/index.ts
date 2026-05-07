@@ -296,6 +296,7 @@ export class ExcalidrawBinding {
             pointer: state.pointer,
             button: state.button,
             selectedElementIds: state.selectedElementIds,
+            viewport: state.viewport,
             id: state.user?.id,
             username: state.user?.name,
             color: state.user?.color,
@@ -366,6 +367,7 @@ export class ExcalidrawBinding {
           pointer: state.pointer,
           button: state.button,
           selectedElementIds: state.selectedElementIds,
+          viewport: state.viewport,
           id: state.user?.id,
           username: state.user?.name,
           color: state.user?.color,
@@ -406,11 +408,18 @@ export class ExcalidrawBinding {
       x: number;
       y: number;
       tool: "pointer" | "laser";
+      renderCursor?: boolean;
     };
     button: "down" | "up";
+    pointersMap?: Map<number, { x: number; y: number }>;
   }) => {
     if (this.awareness) {
-      this.awareness.setLocalStateField("pointer", payload.pointer);
+      this.awareness.setLocalStateField("pointer", {
+        ...payload.pointer,
+        ...(payload.pointersMap && payload.pointersMap.size > 1
+          ? { renderCursor: false }
+          : {}),
+      });
       this.awareness.setLocalStateField("button", payload.button);
     }
   };
