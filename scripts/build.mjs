@@ -74,5 +74,5 @@ try {
   log('✅ Build complete');
 } catch (err) {
   console.error(`[build] ❌ Build failed: ${err.message}`);
-  process.exit(0);
+  process.exit(ignoreTypeErrorsFlag ? 0 : 1);
 }
