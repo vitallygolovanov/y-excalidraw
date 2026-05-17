@@ -1,5 +1,5 @@
 import { ExcalidrawElement, NonDeletedExcalidrawElement } from "@excalidraw/excalidraw/element/types"
-import { moveArrayItem, yjsToExcalidraw } from "./helpers"
+import { moveArrayItem, normalizeOrderedSnapshot, normalizeUniqueExcalidrawElements, yjsToExcalidraw } from "./helpers"
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing';
 import * as Y from 'yjs'
 import { BinaryFileData, BinaryFiles } from "@excalidraw/excalidraw/types";
@@ -146,19 +146,22 @@ export const getDeltaOperationsForElements = (
     onInvalidMoveOrderingRecovery?: (event: InvalidMoveOrderingRecoveryEvent) => void
   },
 ): {operations: Operation[], lastKnownElements: LastKnownOrderedElement[]} => {
+  const normalizedLastKnownElements = normalizeOrderedSnapshot(lastKnownElements)
+  const normalizedNewElements = normalizeUniqueExcalidrawElements(newElements)
+
   // Final operations are always in this order -> All updates + All appends + All deletes + All moves
   const updateOperations: UpdateOperation[] = []
   const appendOperations: AppendOperation[] = []
   const deleteOperations: DeleteOperation[] = []
   const moveOperations: MoveOperation[] = []
   const reindexOperations: ReindexOperation[] = []
-  const stableIds = new Set(lastKnownElements.map((x) => x.id))
+  const stableIds = new Set(normalizedLastKnownElements.map((x) => x.id))
 
   // Updates the old elements as and when an operation is performed on it
   const opsTracker: OperationTracker = {
-    elementIds: lastKnownElements.map((x) => x.id),
+    elementIds: normalizedLastKnownElements.map((x) => x.id),
     // id map is needed to quickly look up index for the element with a given id
-    idMap: lastKnownElements.reduce((map: any, data, index) => {
+    idMap: normalizedLastKnownElements.reduce((map: any, data, index) => {
       map[data.id ] = { id: data.id, version: data.version, pos: data.pos, index }
       return map
     }, {})
@@ -171,7 +174,7 @@ export const getDeltaOperationsForElements = (
     }, {})
   }
 
-  for (let newElement of newElements) {
+  for (let newElement of normalizedNewElements) {
     let oldIndex: number | null = null;
     let oldElement: LastKnownOrderedElement | null = null
     if (opsTracker.idMap[newElement.id]) {
@@ -203,7 +206,7 @@ export const getDeltaOperationsForElements = (
 
   // Form delete operations
   // We are deleting from left to right
-  const newElementIds = new Set(newElements.map((x) => x.id))
+  const newElementIds = new Set(normalizedNewElements.map((x) => x.id))
   const newOpsTrackerElementIds: string[] = []
   let runningIndex = 0
   for (let i = 0; i < opsTracker.elementIds.length; i++) {
@@ -223,8 +226,8 @@ export const getDeltaOperationsForElements = (
   }
 
   // Find move operations
-  for (let toIndex = 0; toIndex < newElements.length; toIndex++) {
-    const id = newElements[toIndex].id
+  for (let toIndex = 0; toIndex < normalizedNewElements.length; toIndex++) {
+    const id = normalizedNewElements[toIndex].id
     const { index: fromIndex } = opsTracker.idMap[id]
 
     if (toIndex !== fromIndex) {
@@ -269,7 +272,7 @@ export const getDeltaOperationsForElements = (
   if (bulkify) {
     // Merge append operations
     if (appendOperations.length > 0) {
-      const sortIndexes = generateNKeysBetween(lastKnownElements[lastKnownElements.length - 1]?.pos, null, appendOperations.length)
+      const sortIndexes = generateNKeysBetween(normalizedLastKnownElements[normalizedLastKnownElements.length - 1]?.pos, null, appendOperations.length)
       for (let [i, op] of appendOperations.entries()) {
         opsTracker.idMap[op.id].pos = sortIndexes[i]
       }

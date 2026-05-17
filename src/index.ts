@@ -7,7 +7,7 @@ import type {
 } from "@excalidraw/excalidraw/types";
 import type * as awarenessProtocol from "y-protocols/awareness";
 import * as Y from "yjs";
-import { areElementsSame, debounce, yjsToExcalidraw, yjsToOrderedSnapshot } from "./helpers";
+import { areElementsSame, debounce, normalizeOrderedSnapshot, normalizeUniqueExcalidrawElements, yjsToExcalidraw, yjsToOrderedSnapshot } from "./helpers";
 import { applyAssetOperations, applyElementOperations, classifyElementOperationsForDestructiveWrite, DestructiveWriteClassification, FixedIndex, getDeltaOperationsForAssets, getDeltaOperationsForElements, InvalidMoveOrderingRecoveryEvent, LastKnownOrderedElement, NullableOrderedRemoteElement, Operation, OrderedRemoteElement } from "./diff";
 import { ExcalidrawElement, NonDeletedExcalidrawElement, Ordered } from "@excalidraw/excalidraw/element/types";
 export { yjsToExcalidraw }
@@ -92,6 +92,12 @@ export class ExcalidrawBinding {
       this.api.onChange((_, state, files) => {
         // TODO: Excalidraw doesn't delete the asset from the map when the associated item is deleted.
         let elements = this.api.getSceneElements(); // This returns without deleted elements
+        const normalizedLastKnownElements = normalizeOrderedSnapshot(this.lastKnownElements)
+
+        if (normalizedLastKnownElements.length !== this.lastKnownElements.length) {
+          this.lastKnownElements = normalizedLastKnownElements
+          this.recordNonEmptyElementBaseline(normalizedLastKnownElements.length)
+        }
 
         // Invoke a callback if provided. Do this before any filtering to ensure the middleware can see all elements.
         if (middleware?.transformLocalFiles) {
@@ -101,12 +107,13 @@ export class ExcalidrawBinding {
         // This fires very often even when data is not changed, so keeping a fast procedure to check if anything changed or not
         // Even on move operations, the version property changes so this should work
         let operations: Operation[] = []
-        if (!areElementsSame(this.lastKnownElements, elements)) {
-          if (middleware?.transformLocalElements) {
-            elements = middleware.transformLocalElements(elements);
-          }        
-          
+        if (middleware?.transformLocalElements) {
+          elements = middleware.transformLocalElements(elements);
+        }
 
+        elements = normalizeUniqueExcalidrawElements(elements);
+
+        if (!areElementsSame(this.lastKnownElements, elements)) {
           const res = getDeltaOperationsForElements(this.lastKnownElements, elements, true, {
             onInvalidMoveOrderingRecovery: middleware?.onInvalidMoveOrderingRecovery,
           })

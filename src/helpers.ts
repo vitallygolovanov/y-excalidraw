@@ -48,6 +48,72 @@ export const areElementsSame = (els1: readonly {id: string, version: number}[], 
   return true
 }
 
+const getElementUpdated = (element: { updated?: number }) => {
+  return typeof element.updated === "number" ? element.updated : -1
+}
+
+const compareDuplicateLocalElementPriority = (
+  current: { version: number, updated?: number },
+  candidate: { version: number, updated?: number },
+) => {
+  const currentUpdated = getElementUpdated(current)
+  const candidateUpdated = getElementUpdated(candidate)
+
+  if (candidateUpdated !== currentUpdated) {
+    return candidateUpdated - currentUpdated
+  }
+
+  if (candidate.version !== current.version) {
+    return candidate.version - current.version
+  }
+
+  return 0
+}
+
+const compareDuplicateOrderedSnapshotPriority = (
+  current: OrderedElementSnapshot,
+  candidate: OrderedElementSnapshot,
+) => {
+  if (candidate.version !== current.version) {
+    return candidate.version - current.version
+  }
+
+  if (candidate.pos > current.pos) {
+    return 1
+  }
+
+  if (candidate.pos < current.pos) {
+    return -1
+  }
+
+  return 0
+}
+
+export const normalizeUniqueExcalidrawElements = <T extends { id: string, version: number, updated?: number }>(
+  elements: readonly T[],
+): T[] => {
+  const uniqueEntries = new Map<string, { element: T, index: number }>()
+
+  for (let index = 0; index < elements.length; index += 1) {
+    const element = elements[index]
+    const current = uniqueEntries.get(element.id)
+
+    if (!current) {
+      uniqueEntries.set(element.id, { element, index })
+      continue
+    }
+
+    const priority = compareDuplicateLocalElementPriority(current.element, element)
+    if (priority > 0 || (priority === 0 && index > current.index)) {
+      uniqueEntries.set(element.id, { element, index })
+    }
+  }
+
+  return [...uniqueEntries.values()]
+    .sort((left, right) => left.index - right.index)
+    .map((entry) => entry.element)
+}
+
 const compareOrderedYjsEntries = (a: OrderedYjsEntry, b: OrderedYjsEntry) => {
   if (a.pos > b.pos) {
     return 1
@@ -95,6 +161,29 @@ const getOrderedUniqueYjsEntries = (yArray: Y.Array<Y.Map<any>>): OrderedYjsEntr
 
 export const yjsToExcalidraw = (yArray: Y.Array<Y.Map<any>>): ExcalidrawElement[] => {
   return getOrderedUniqueYjsEntries(yArray).map((entry) => entry.el)
+}
+
+export const normalizeOrderedSnapshot = <T extends OrderedElementSnapshot>(elements: readonly T[]): T[] => {
+  const uniqueEntries = new Map<string, { element: T, index: number }>()
+
+  for (let index = 0; index < elements.length; index += 1) {
+    const element = elements[index]
+    const current = uniqueEntries.get(element.id)
+
+    if (!current) {
+      uniqueEntries.set(element.id, { element, index })
+      continue
+    }
+
+    const priority = compareDuplicateOrderedSnapshotPriority(current.element, element)
+    if (priority > 0 || (priority === 0 && index > current.index)) {
+      uniqueEntries.set(element.id, { element, index })
+    }
+  }
+
+  return [...uniqueEntries.values()]
+    .sort((left, right) => left.index - right.index)
+    .map((entry) => entry.element)
 }
 
 export const yjsToOrderedSnapshot = (yArray: Y.Array<Y.Map<any>>): OrderedElementSnapshot[] => {

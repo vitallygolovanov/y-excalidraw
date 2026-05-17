@@ -66,3 +66,56 @@ test("reports invalid tracked ordering recovery details to callers", () => {
     ],
   });
 });
+
+test("deduplicates duplicate local scene ids before diffing", () => {
+  const lastKnownElements = [
+    { id: "A", version: 1, pos: "a0" },
+    { id: "B", version: 1, pos: "a1" },
+  ];
+
+  const newElements = [
+    { id: "A", version: 1, updated: 1 },
+    { id: "dup", version: 1, updated: 1 },
+    { id: "B", version: 1, updated: 1 },
+    { id: "dup", version: 1, updated: 2 },
+  ];
+
+  const result = getDeltaOperationsForElements(lastKnownElements, newElements);
+
+  assert.deepEqual(
+    result.lastKnownElements.map((element) => element.id),
+    ["A", "B", "dup"],
+  );
+
+  assert.equal(
+    result.lastKnownElements.filter((element) => element.id === "dup").length,
+    1,
+  );
+});
+
+test("deduplicates duplicate last-known ids before move computation", () => {
+  const lastKnownElements = [
+    { id: "A", version: 1, pos: "a0" },
+    { id: "dup", version: 1, pos: "a1" },
+    { id: "B", version: 1, pos: "a2" },
+    { id: "dup", version: 1, pos: "a3" },
+  ];
+
+  const newElements = [
+    { id: "A", version: 1 },
+    { id: "B", version: 1 },
+    { id: "dup", version: 1 },
+  ];
+
+  const result = getDeltaOperationsForElements(lastKnownElements, newElements);
+
+  assert.deepEqual(
+    result.lastKnownElements.map((element) => element.id),
+    ["A", "B", "dup"],
+  );
+
+  assert.equal(
+    result.lastKnownElements.filter((element) => element.id === "dup").length,
+    1,
+  );
+});
