@@ -5,6 +5,7 @@ import type {
   ExcalidrawImperativeAPI,
   SocketId,
 } from "@excalidraw/excalidraw/types";
+import { CaptureUpdateAction } from "@excalidraw/excalidraw";
 import type * as awarenessProtocol from "y-protocols/awareness";
 import * as Y from "yjs";
 import { areElementsSame, debounce, normalizeOrderedSnapshot, normalizeUniqueExcalidrawElements, yjsToExcalidraw, yjsToOrderedSnapshot } from "./helpers";
@@ -240,7 +241,10 @@ export class ExcalidrawBinding {
 
       this.lastKnownElements = yjsToOrderedSnapshot(this.yElements)
       this.recordNonEmptyElementBaseline(this.lastKnownElements.length)
-      this.api.updateScene({ elements })
+      this.api.updateScene({
+        elements,
+        captureUpdate: CaptureUpdateAction.NEVER,
+      })
     }
     this.yElements.observeDeep(_remoteElementsChangeHandler)
     this.subscriptions.push(() => this.yElements.unobserveDeep(_remoteElementsChangeHandler))
@@ -328,7 +332,10 @@ export class ExcalidrawBinding {
     const initialValue = yjsToExcalidraw(this.yElements)
     this.lastKnownElements = yjsToOrderedSnapshot(this.yElements)
     this.recordNonEmptyElementBaseline(this.lastKnownElements.length)
-    this.api.updateScene({ elements: initialValue });
+    this.api.updateScene({
+      elements: initialValue,
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
 
     const initialAssets = [...this.yAssets.keys()].map(
       (key) => this.yAssets.get(key) as BinaryFileData
